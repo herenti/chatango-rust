@@ -1,4 +1,4 @@
-use std::cmp;
+
 
 fn g_server(mut group: String) -> i64{
 
@@ -7,28 +7,25 @@ fn g_server(mut group: String) -> i64{
     group = group.replace("-","q");
     group = group.replace("_","q");
 
-    let mut a = if group.len() > 6 {
-        let mut a = std::cmp::min(3, group.len() - 5);
-        let substr = &group[6..6+a];
-        let mut a = i64::from_str_radix(substr, 36);
-        let mut a = a.unwrap();
-        let mut a = a as f64;
+    let a = if group.len() > 6 {
+        let a_len = std::cmp::min(3, group.len() - 5);
+        let a_substr = &group[6..6+a_len];
+        let a_int = i64::from_str_radix(a_substr, 36).unwrap();
+        let a = a_int as f64;
         if a <= 1000.0 {
             1000.0
         }
         else {
         a
         }
-
     }
     else{
         1000.0
     };
-
-    let mut b = std::cmp::min(5, group.len());
-    let substr = &group[..b];
-    let mut b = i64::from_str_radix(substr, 36).unwrap();
-    let mut b = b as f64;
+    let b_len = std::cmp::min(5, group.len());
+    let b_substr = &group[..b_len];
+    let b_int = i64::from_str_radix(b_substr, 36).unwrap();
+    let b = b_int as f64;
     let num = (b / a) % 1.0;
     let mut anpan = 0.0;
     let mut s_number = 0;
