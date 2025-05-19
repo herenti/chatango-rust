@@ -80,6 +80,19 @@ impl Chat{
 
     }
 
+    fn events(&mut self, collection: Vec<&str>){
+        let event = &collection[0];
+        let data = &collection[1..];
+        //println!("event: {:?} data: {:?}", event, data);
+        if *event == "b"{
+            let message = &data[9..];
+            let message = message.join("");
+            if message.contains("ping"){
+               let _ = self.cumsock.write(b"bm:fuck:2048:<n000000/><f x12000000=\"0\">pong</f>\r\n\x00").unwrap();
+            }
+    }
+    }
+
 
 }
 
@@ -106,33 +119,25 @@ impl Bakery{
     }
 
     fn breadbun(&mut self){
-        let mut read_sockets = vec![];
-        for i in &mut self.connections {
-            read_sockets.insert(read_sockets.len(), &mut i.cumsock)
-        };
         let anpan_is_tasty = true;
         while anpan_is_tasty {
-            for i in &mut read_sockets{
-                let mut buf = [0; 1024];
-                if let Ok(len) = i.read(&mut buf) {
-                    if len > 0 {
-                        let data = &buf[..len];
-                        for x in data.split(|b| b == &0x00) {
-                            let s = std::str::from_utf8(x).unwrap();
-                            let s = s.split(":");
-                            let collection = s.collect::<Vec<&str>>();
-                            let event = &collection[0];
-                            let data = &collection[1..];
-                            //println!("event: {:?} data: {:?}", event, data);
-                            if *event == "b"{
-                                let message = &data[9..];
-                                let message = message.join("");
-                                if message.contains("ping"){
-                                    i.write(b"bm:fuck:2048:<n000000/><f x12000000=\"0\">pong</f>\r\n\x00");
-                                }
+            for con in &mut self.connections{
+                    let mut buf = [0; 1024];
+                    if let Ok(len) = con.cumsock.read(&mut buf) {
+                        if len > 0 {
+                            let data = &buf[..len];
+                            for x in data.split(|b| b == &0x00) {
+                                let s = std::str::from_utf8(x).unwrap();
+                                let s = s.split(":");
+                                let collection = s.collect::<Vec<&str>>();
+
+                                //println!("event: {:?} data: {:?}", event, data);
+                                con.events(collection);
+
+
                             }
                         }
-                    }
+
                 }
 
             }
