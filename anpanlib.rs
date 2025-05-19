@@ -1,6 +1,12 @@
 
+use std::net::TcpStream;
+use std::io::prelude::*;
 
-fn g_server(mut group: String) -> i64{
+const USERNAME: &str = "anpanbot";
+
+const PASSWORD: &str = "";
+
+fn g_server(mut group: String) -> String{
 
     let weights = [[5, 75],[6, 75],[7, 75],[8, 75],[16, 75],[17, 75],[18, 75],[9, 95],[11, 95],[12, 95],[13, 95],[14, 95],[15, 95],[19, 110],[23, 110],[24, 110],[25, 110],[26, 110],[28, 104],[29, 104],[30, 104],[31, 104],[32, 104],[33, 104],[35, 101],[36, 101],[37, 101],[38, 101],[39, 101],[40, 101],[41, 101],[42, 101],[43, 101],[44, 101],[45, 101],[46, 101],[47, 101],[48, 101],[49, 101],[50, 101],[52, 110],[53, 110],[55, 110],[57, 110],[58, 110],[59, 110],[60, 110],[61, 110],[62, 110],[63, 110],[64, 110],[65, 110],[66, 110],[68, 95],[71, 116],[72, 116],[73, 116],[74, 116],[75, 116],[76, 116],[77, 116],[78, 116],[79, 116],[80, 116],[81, 116],[82, 116],[83, 116],[84, 116]];
 
@@ -33,7 +39,7 @@ fn g_server(mut group: String) -> i64{
         }
     }
 
-    s_number
+    format!("s{}.chatango.com:443", s_number)
 }
 
 
@@ -41,10 +47,61 @@ fn g_server(mut group: String) -> i64{
 
 fn main() {
 
-    let to_server: String = String::from("princess-garden");
-    let server = format!("s{}.chatango.com", g_server(to_server));
-    println!("{}", server);
+    struct Chat{
+        name: String,
+        cumsock: TcpStream,
+    }
+
+    let mut connections = vec![];
+
+    let room_list = ["garden", "jewelisland"];
+    for i in room_list {
+        let server = g_server(String::from(i));
+        let mut chat: Chat = Chat{
+            name: String::from(i),
+            cumsock: TcpStream::connect(server).unwrap(),
+
+        };
+        let to_send = format!("bauth:{}:5121717680991237:{}:{}\x00", chat.name, USERNAME, PASSWORD);
+        let _ = chat.cumsock.write(to_send.as_bytes()).unwrap();
+
+        connections.insert(connections.len(), chat);
+
+    };
+
+    let mut read_sockets = vec![];
+    for i in connections {
+        read_sockets.insert(read_sockets.len(), i.cumsock)
+    };
+    let anpan_is_tasty = true;
+    while anpan_is_tasty {
+        for mut i in &read_sockets{
+            let mut buf = [0; 1024];
+            if let Ok(len) = i.read(&mut buf) {
+                if len > 0 {
+                    let data = &buf[..len];
+                    for x in data.split(|&b| b == 0x00) {
+                    let s = match std::str::from_utf8(x){
+                        Ok(v) => v,
+                        Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+
+                    };
+                    println!("{}", s);
+                        }
+                    }
+            }
+
+                    }
+                }
+
+
+
+
+
+
 
 
 }
+
+
 
