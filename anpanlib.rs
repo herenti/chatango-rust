@@ -1,10 +1,7 @@
 
 use std::net::TcpStream;
 use std::io::prelude::*;
-
-const USERNAME: &str = "anpanbot";
-
-const PASSWORD: &str = "theazter";
+use rand::Rng;
 
 fn g_server(mut group: String) -> String{
 
@@ -13,7 +10,7 @@ fn g_server(mut group: String) -> String{
     group = group.replace("-","q").replace("_","q");
     let a = if group.len() > 6 {
         let a = if group.len() >= 9 {
-        &group[6..9]
+            &group[6..9]
         } else {
             &group[6..]
         };
@@ -44,60 +41,85 @@ fn g_server(mut group: String) -> String{
 
 
 
+struct Chat{
+    name: String,
+    cumsock: TcpStream,
+    wbyte: String
+}
 
-fn main() {
-
-    struct Chat{
-        name: String,
-        cumsock: TcpStream,
+impl Chat{
+    fn new(name: String, username: String, password: String) -> Self {
+        let server = g_server(name.clone());
+        let mut chat = Chat{
+            name: name,
+            cumsock: TcpStream::connect(server).unwrap(),
+            wbyte: "".to_string(),
+        };
+        chat.chat_login(username, password);
+        chat
     }
 
-    let mut connections = vec![];
+    fn chat_login(&mut self, username: String, password: String){
 
-    let room_list = ["garden", "jewelisland"];
-    for i in room_list {
-        let server = g_server(String::from(i));
-        let mut chat: Chat = Chat{
-            name: String::from(i),
-            cumsock: TcpStream::connect(server).unwrap(),
+        let chat_id = rand::thread_rng().gen_range(10_u128.pow(15)..10_u128.pow(16)).to_string();
+        let to_send = format!("bauth:{}:{}:{}:{}\x00", self.name, chat_id, username, password);
+        println!("{}", to_send);
 
-        };
-        let to_send = format!("bauth:{}:5121717680991237:{}:{}\x00", chat.name, USERNAME, PASSWORD);
-        let _ = chat.cumsock.write(to_send.as_bytes()).unwrap();
+        self.cumsock.write(to_send.as_bytes());
 
-        connections.insert(connections.len(), chat);
-
-    };
-
-    let mut read_sockets = vec![];
-    for i in connections {
-        read_sockets.insert(read_sockets.len(), i.cumsock)
-    };
-    let anpan_is_tasty = true;
-    while anpan_is_tasty {
-        for mut i in &read_sockets{
-            let mut buf = [0; 1024];
-            if let Ok(len) = i.read(&mut buf) {
-                if len > 0 {
-                    let data = &buf[..len];
-                    for x in data.split(|b| b == &0x00) {
-                    let s = std::str::from_utf8(x).unwrap();
-                    println!("{:?}", s);
-                        }
-                    }
-            }
-
-                    }
-                }
-
-
-
-
-
-
+    }
 
 
 }
 
 
+struct Bakery{
+    connections: Vec<Chat>,
 
+}
+
+impl Bakery{
+
+    fn oven(username: &str, password: &str, room_list: Vec<&str>) -> Self {
+       let mut bakery = Bakery {
+            connections: vec![],
+        };
+        for i in room_list{
+            let chat = Chat::new(i.to_string(), username.to_string(), password.to_string());
+
+            bakery.connections.insert(bakery.connections.len(), chat);
+        };
+        bakery.breadbun();
+        bakery
+
+    }
+
+    fn breadbun(&mut self){
+        let mut read_sockets = vec![];
+        for i in &mut self.connections {
+            read_sockets.insert(read_sockets.len(), &mut i.cumsock)
+        };
+        let anpan_is_tasty = true;
+        while anpan_is_tasty {
+            for mut i in &mut read_sockets{
+                let mut buf = [0; 1024];
+                if let Ok(len) = i.read(&mut buf) {
+                    if len > 0 {
+                        let data = &buf[..len];
+                        for x in data.split(|b| b == &0x00) {
+                            let s = std::str::from_utf8(x).unwrap();
+                            println!("{:?}", s);
+                        }
+                    }
+                }
+
+            }
+        }
+    }
+}
+
+fn main() {
+    Bakery::oven("anpanbot", "", vec!["garden", "jewelisland"]);
+
+
+}
