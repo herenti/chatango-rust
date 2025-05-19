@@ -2,6 +2,8 @@
 use std::net::TcpStream;
 use std::io::prelude::*;
 use rand::Rng;
+use std::thread;
+use std::time::Duration;
 
 fn g_server(mut group: String) -> String{
 
@@ -55,6 +57,7 @@ impl Chat{
             cumsock: TcpStream::connect(server).unwrap(),
             wbyte: "".to_string(),
         };
+        chat.cumsock.set_nonblocking(true).expect("set_nonblocking call failed");
         chat.chat_login(username, password);
         chat
     }
@@ -64,8 +67,16 @@ impl Chat{
         let chat_id = rand::thread_rng().gen_range(10_u128.pow(15)..10_u128.pow(16)).to_string();
         let to_send = format!("bauth:{}:{}:{}:{}\x00", self.name, chat_id, username, password);
         println!("{}", to_send);
+        let _ = self.cumsock.write(to_send.as_bytes()).unwrap();
+        let mut socket_clone = self.cumsock.try_clone().expect("Failed to clone socket");
+        thread::spawn(move || {
+            loop {
+                let data = b"\r\n\x00";
+                socket_clone.write(data);
+                thread::sleep(Duration::from_secs(20));
 
-        self.cumsock.write(to_send.as_bytes());
+            }
+        });
 
     }
 
@@ -101,14 +112,14 @@ impl Bakery{
         };
         let anpan_is_tasty = true;
         while anpan_is_tasty {
-            for mut i in &mut read_sockets{
+            for i in &mut read_sockets{
                 let mut buf = [0; 1024];
                 if let Ok(len) = i.read(&mut buf) {
                     if len > 0 {
                         let data = &buf[..len];
                         for x in data.split(|b| b == &0x00) {
                             let s = std::str::from_utf8(x).unwrap();
-                            println!("{:?}", s);
+                            println!("{}", s);
                         }
                     }
                 }
