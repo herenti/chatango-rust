@@ -4,7 +4,7 @@ use std::io::prelude::*;
 
 const USERNAME: &str = "anpanbot";
 
-const PASSWORD: &str = "";
+const PASSWORD: &str = "theazter";
 
 fn g_server(mut group: String) -> String{
 
@@ -80,13 +80,9 @@ fn main() {
             if let Ok(len) = i.read(&mut buf) {
                 if len > 0 {
                     let data = &buf[..len];
-                    for x in data.split(|&b| b == 0x00) {
-                    let s = match std::str::from_utf8(x){
-                        Ok(v) => v,
-                        Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-
-                    };
-                    println!("{}", s);
+                    for x in data.split(|b| b == &0x00) {
+                    let s = std::str::from_utf8(x).unwrap();
+                    println!("{:?}", s);
                         }
                     }
             }
