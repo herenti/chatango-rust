@@ -88,6 +88,7 @@ struct Message{
     sid: String,
     ip: String,
     content: String,
+    chat: String,
 }
 
 struct Chat{
@@ -211,6 +212,7 @@ impl Chat{
             sid: data[5].to_string(),
             ip: data[6].to_string(),
             content: content.to_string(),
+            chat: self.name.clone(),
         };
 
         self.on_post(message);
@@ -219,7 +221,10 @@ impl Chat{
     }
 
     fn on_post(&mut self, message: Message){
-        println!("{}: {}", message.user, message.content);
+        //println!("{}: {}", message.user, message.content);
+        if message.content.to_lowercase().contains("herenti"){
+            println!("{}: {}: {}", message.user, message.chat, message.content)
+        }
         if message.content.starts_with("$") {
             let args = message.content.split(" ");
             let args: Vec<&str> = args.collect();
