@@ -1,6 +1,6 @@
 /*
  TODO: CLEAN UP CODE AND ADD EVENTS.
- STRIP EVENT DATA
+       STRIP EVENT DATA
 */
 
 
@@ -13,6 +13,8 @@ use regex::Regex;
 use std::collections::HashMap;
 use reqwest::header::USER_AGENT;
 use reqwest::header::HeaderValue;
+use html_escape::encode_text;
+
 
 fn g_server(mut group: String) -> String{
 
@@ -50,7 +52,7 @@ fn g_server(mut group: String) -> String{
     format!("s{}.chatango.com:443", s_number)
 }
 
-fn auth(user: &str, pass: &str) -> Option<String> {
+fn auth(user: &str, pass: &str) -> String {
     let mut form = HashMap::new();
     form.insert("user_id", user);
     form.insert("password", pass);
@@ -65,32 +67,34 @@ fn auth(user: &str, pass: &str) -> Option<String> {
     ))
     .send();
 
-    // Print headers
+
     let res = res.unwrap();
     let res = res.headers();
-    for (key, value) in res {
-        if key == "set-cookie" {
-            let value = value.to_str().unwrap();
-            if value.contains("auth.chatango"){
-                let cookie = value;
-                let re = Regex::new(r"auth.chatango.com=(.*?);").unwrap();
-                let extract = re.captures(cookie).unwrap();
-                let extract = extract.get(1);
-                return Some(extract.unwrap().as_str().to_string());
+    let cookie: Vec<_> = res.get_all("set-cookie").iter().filter_map(|val| val.to_str().ok()).map(|s| s.to_string()).collect();
+    let cookie = &cookie[2];
+    let re = Regex::new(r"auth.chatango.com=(.*?);").unwrap();
+    let extract = re.captures(cookie).unwrap().get(1);
+    let extract = extract.unwrap().as_str().to_string();
+    extract
 
-            }
-    }
-
-    }
-    None
+}
 
 
+struct Message{
+    user: String,
+    cid: String,
+    uid: String,
+    time: String,
+    sid: String,
+    ip: String,
+    content: String,
 }
 
 struct Chat{
     name: String,
     cumsock: TcpStream,
     wbyte: String,
+    byteready: bool
 }
 
 impl Chat{
@@ -105,6 +109,7 @@ impl Chat{
             name: name,
             cumsock: TcpStream::connect(server).unwrap(),
             wbyte: "".to_string(),
+            byteready: false,
         };
         chat.cumsock.set_nonblocking(true).expect("set_nonblocking call failed");
         if ctype == "chat" {
@@ -118,8 +123,8 @@ impl Chat{
     fn chat_login(&mut self, username: String, password: String){
 
         let chat_id = rand::thread_rng().gen_range(10_u128.pow(15)..10_u128.pow(16)).to_string();
-        let to_send = format!("bauth:{}:{}:{}:{}\x00", self.name, chat_id, username, password);
-        let _ = self.cumsock.write(to_send.as_bytes()).unwrap();
+        self.chat_send(vec!["bauth", &self.name.clone(), &chat_id, &username, &password]);
+        self.byteready = true;
         let mut socket_clone = self.cumsock.try_clone().expect("Failed to clone socket");
         thread::spawn(move || {
             loop {
@@ -134,7 +139,7 @@ impl Chat{
 
     fn pm_login(&mut self, username: String, password: String){
 
-        let auth = auth(&username, &password).unwrap();
+        let auth = auth(&username, &password);
         let to_send = format!("tlogin:{}:2\x00", auth);
         let _ = self.cumsock.write(to_send.as_bytes()).unwrap();
         let mut socket_clone = self.cumsock.try_clone().expect("Failed to clone socket");
@@ -148,18 +153,89 @@ impl Chat{
 
     }
 
+    fn chat_send(&mut self, data: Vec<&str>){
+        let ending = if self.byteready {
+            "\r\n\x00"
+        } else{
+            "\x00"
+        };
+        let data = data.join(":");
+        let data = format!("{}{}", data, ending);
+        self.cumsock.write(data.as_bytes());
+
+    }
+
+    fn chat_post(&mut self, args: &str){
+        let message  = format!("<n000000/><f x12000000=\"0\">{}</f>\r\n\x00", args);
+        self.chat_send(vec!["bm","fuck", "2048", &message]);
+
+    }
+
     fn events(&mut self, collection: Vec<&str>){
         let event = &collection[0];
         let data = &collection[1..];
-        println!("event: {:?} data: {:?}", event, data);
+        //println!("event: {:?} data: {:?}", event, data);
         if *event == "b"{
-            let message = &data[9..];
-            let message = message.join("");
-            /*if message.contains("ping"){
-               let _ = self.cumsock.write(b"bm:fuck:2048:<n000000/><f x12000000=\"0\">pong</f>\r\n\x00").unwrap();
-            }
-            */
+            self.event_b(data);
+
+        }
     }
+
+    fn event_b(&mut self, data: &[&str]){
+        let user = data[1];
+        let alias = data[2];
+        let user = if user == "" {
+            "None"
+        } else{
+            user
+        };
+        let user = if user == "None"{
+            if alias == ""{
+                "None"
+            } else if alias == "None"{
+                "None"
+            } else{
+                alias
+            }
+        }else
+        { user};
+        let re = Regex::new(r"<.*?>").unwrap();
+        let content = data[9..].join("");
+        let content = re.replace_all(&content, "");
+        let content = html_escape::decode_html_entities(&content);
+        let mut message = Message{
+            user: user.to_string(),
+            cid: data[4].to_string(),
+            uid: data[3].to_string(),
+            time: data[0].to_string(),
+            sid: data[5].to_string(),
+            ip: data[6].to_string(),
+            content: content.to_string(),
+        };
+
+        self.on_post(message);
+
+
+    }
+
+    fn on_post(&mut self, message: Message){
+        println!("{}: {}", message.user, message.content);
+        if message.content.starts_with("$") {
+            let args = message.content.split(" ");
+            let args: Vec<&str> = args.collect();
+            let command = args[0];
+            let args = if args.len() > 1 {
+                args[1..].join(" ")
+            } else {
+                "".to_string()
+            };
+            let command = command.replace("$", "");
+            let command = command.to_lowercase();
+            if command == "say" {
+                self.chat_post(&args);
+            }
+
+        }
     }
 
 
@@ -199,6 +275,7 @@ impl Bakery{
                             let data = &buf[..len];
                             for x in data.split(|b| b == &0x00) {
                                 let s = std::str::from_utf8(x).unwrap();
+                                let s = s.trim();
                                 let s = s.split(":");
                                 let collection = s.collect::<Vec<&str>>();
                                 con.events(collection);
@@ -212,7 +289,7 @@ impl Bakery{
 }
 
 fn main() {
-    Bakery::oven("anpanbot", "", vec!["jewelisland", "princess-garden", "epic"]);
+    Bakery::oven("anpanbot", "", vec!["princess-garden", "epic"]);
 
 
 }
