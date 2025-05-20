@@ -1,16 +1,5 @@
 /*
  TODO: CLEAN UP CODE AND ADD EVENTS.
-       STRIP EVENT DATA
-
-
-       use once_cell::sync::Lazy;
-       use std::sync::Mutex;
-
-       static LIST: Lazy<Mutex<Vec<&'static str>>> = Lazy::new(|| {
-       Mutex::new(Vec::new())
-       });
-       let mut list = LIST.lock().unwrap();
-       list.push("hello");
 */
 
 
