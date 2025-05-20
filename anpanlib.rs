@@ -1,6 +1,16 @@
 /*
  TODO: CLEAN UP CODE AND ADD EVENTS.
        STRIP EVENT DATA
+
+
+       use once_cell::sync::Lazy;
+       use std::sync::Mutex;
+
+       static LIST: Lazy<Mutex<Vec<&'static str>>> = Lazy::new(|| {
+       Mutex::new(Vec::new())
+       });
+       let mut list = LIST.lock().unwrap();
+       list.push("hello");
 */
 
 
@@ -14,6 +24,9 @@ use std::collections::HashMap;
 use reqwest::header::USER_AGENT;
 use reqwest::header::HeaderValue;
 use html_escape::encode_text;
+mod rainbow;
+use rainbow::Rainbow; //found in extra-stuff repository. i do not own this code.
+
 
 
 fn g_server(mut group: String) -> String{
@@ -67,7 +80,6 @@ fn auth(user: &str, pass: &str) -> String {
     ))
     .send();
 
-
     let res = res.unwrap();
     let res = res.headers();
     let cookie: Vec<_> = res.get_all("set-cookie").iter().filter_map(|val| val.to_str().ok()).map(|s| s.to_string()).collect();
@@ -76,7 +88,6 @@ fn auth(user: &str, pass: &str) -> String {
     let extract = re.captures(cookie).unwrap().get(1);
     let extract = extract.unwrap().as_str().to_string();
     extract
-
 }
 
 
@@ -225,21 +236,37 @@ impl Chat{
         if message.content.to_lowercase().contains("herenti"){
             println!("{}: {}: {}", message.user, message.chat, message.content)
         }
-        if message.content.starts_with("$") {
-            let args = message.content.split(" ");
-            let args: Vec<&str> = args.collect();
-            let command = args[0];
-            let args = if args.len() > 1 {
-                args[1..].join(" ")
-            } else {
-                "".to_string()
-            };
-            let command = command.replace("$", "");
-            let command = command.to_lowercase();
-            if command == "say" {
-                self.chat_post(&args);
-            }
+        if message.chat != "jewelisland".to_string(){
+            if message.content.starts_with("$") {
+                let args = message.content.split(" ");
+                let args: Vec<&str> = args.collect();
+                let command = args[0];
+                let args = if args.len() > 1 {
+                    args[1..].join(" ")
+                } else {
+                    "".to_string()
+                };
+                let command = command.replace("$", "");
+                let command = command.to_lowercase();
+                match command.as_str() {
+                    "say" => {
+                        self.chat_post(&args);
+                    }
+                    "rainbow" => {
+                        let size = "12";
+                        let rainbowed = Rainbow::rainbow_text(&args, size);
+                        self.chat_post(&rainbowed);
+                    }
+                    _ => {
 
+                       self.chat_post("Unknown command");
+                    }
+
+                }
+
+
+
+            }
         }
     }
 
@@ -279,7 +306,7 @@ impl Bakery{
                         if len > 0 {
                             let data = &buf[..len];
                             for x in data.split(|b| b == &0x00) {
-                                let s = std::str::from_utf8(x).unwrap();
+                                let s = String::from_utf8_lossy(x);
                                 let s = s.trim();
                                 let s = s.split(":");
                                 let collection = s.collect::<Vec<&str>>();
@@ -294,7 +321,7 @@ impl Bakery{
 }
 
 fn main() {
-    Bakery::oven("anpanbot", "", vec!["princess-garden", "epic"]);
+    Bakery::oven("anpanbot", "", vec!["princess-garden","jewelisland", "epic"]);
 
 
 }
