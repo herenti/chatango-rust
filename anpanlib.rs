@@ -1,9 +1,18 @@
+/*
+ TODO: CLEAN UP CODE AND ADD EVENTS.
+ STRIP EVENT DATA
+*/
+
 
 use std::net::TcpStream;
 use std::io::prelude::*;
 use rand::Rng;
 use std::thread;
 use std::time::Duration;
+use regex::Regex;
+use std::collections::HashMap;
+use reqwest::header::USER_AGENT;
+use reqwest::header::HeaderValue;
 
 fn g_server(mut group: String) -> String{
 
@@ -41,24 +50,68 @@ fn g_server(mut group: String) -> String{
     format!("s{}.chatango.com:443", s_number)
 }
 
+fn auth(user: &str, pass: &str) -> Option<String> {
+    let mut form = HashMap::new();
+    form.insert("user_id", user);
+    form.insert("password", pass);
+    form.insert("storecookie", "on");
+    form.insert("checkerrors", "yes");
+    let client = reqwest::blocking::Client::new();
+    let res = client.post("http://chatango.com/login")
+    .form(&form)
+    .header(USER_AGENT, HeaderValue::from_static(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    ))
+    .send();
 
+    // Print headers
+    let res = res.unwrap();
+    let res = res.headers();
+    for (key, value) in res {
+        if key == "set-cookie" {
+            let value = value.to_str().unwrap();
+            if value.contains("auth.chatango"){
+                let cookie = value;
+                let re = Regex::new(r"auth.chatango.com=(.*?);").unwrap();
+                let extract = re.captures(cookie).unwrap();
+                let extract = extract.get(1);
+                return Some(extract.unwrap().as_str().to_string());
+
+            }
+    }
+
+    }
+    None
+
+
+}
 
 struct Chat{
     name: String,
     cumsock: TcpStream,
-    wbyte: String
+    wbyte: String,
 }
 
 impl Chat{
-    fn new(name: String, username: String, password: String) -> Self {
-        let server = g_server(name.clone());
+    fn new(name: String, username: String, password: String, ctype: &str) -> Self {
+        let server = if ctype == "chat" {
+        g_server(name.clone())
+        } else {
+            let server = "c1.chatango.com:5222".to_string();
+            server
+        };
         let mut chat = Chat{
             name: name,
             cumsock: TcpStream::connect(server).unwrap(),
             wbyte: "".to_string(),
         };
         chat.cumsock.set_nonblocking(true).expect("set_nonblocking call failed");
+        if ctype == "chat" {
         chat.chat_login(username, password);
+        } else {
+            chat.pm_login(username, password);
+        };
         chat
     }
 
@@ -66,7 +119,6 @@ impl Chat{
 
         let chat_id = rand::thread_rng().gen_range(10_u128.pow(15)..10_u128.pow(16)).to_string();
         let to_send = format!("bauth:{}:{}:{}:{}\x00", self.name, chat_id, username, password);
-        println!("{}", to_send);
         let _ = self.cumsock.write(to_send.as_bytes()).unwrap();
         let mut socket_clone = self.cumsock.try_clone().expect("Failed to clone socket");
         thread::spawn(move || {
@@ -80,16 +132,33 @@ impl Chat{
 
     }
 
+    fn pm_login(&mut self, username: String, password: String){
+
+        let auth = auth(&username, &password).unwrap();
+        let to_send = format!("tlogin:{}:2\x00", auth);
+        let _ = self.cumsock.write(to_send.as_bytes()).unwrap();
+        let mut socket_clone = self.cumsock.try_clone().expect("Failed to clone socket");
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_secs(20));
+                let data = b"\r\n\x00";
+                socket_clone.write(data);
+            }
+        });
+
+    }
+
     fn events(&mut self, collection: Vec<&str>){
         let event = &collection[0];
         let data = &collection[1..];
-        //println!("event: {:?} data: {:?}", event, data);
+        println!("event: {:?} data: {:?}", event, data);
         if *event == "b"{
             let message = &data[9..];
             let message = message.join("");
-            if message.contains("ping"){
+            /*if message.contains("ping"){
                let _ = self.cumsock.write(b"bm:fuck:2048:<n000000/><f x12000000=\"0\">pong</f>\r\n\x00").unwrap();
             }
+            */
     }
     }
 
@@ -109,10 +178,12 @@ impl Bakery{
             connections: vec![],
         };
         for i in room_list{
-            let chat = Chat::new(i.to_string(), username.to_string(), password.to_string());
+            let chat = Chat::new(i.to_string(), username.to_string(), password.to_string(), "chat");
 
             bakery.connections.insert(bakery.connections.len(), chat);
         };
+        let chat = Chat::new("_pm".to_string(), username.to_string(), password.to_string(), "pm");
+        bakery.connections.insert(bakery.connections.len(), chat);
         bakery.breadbun();
         bakery
 
@@ -130,15 +201,10 @@ impl Bakery{
                                 let s = std::str::from_utf8(x).unwrap();
                                 let s = s.split(":");
                                 let collection = s.collect::<Vec<&str>>();
-
-                                //println!("event: {:?} data: {:?}", event, data);
                                 con.events(collection);
-
-
                             }
                         }
-
-                }
+                    }
 
             }
         }
@@ -146,7 +212,7 @@ impl Bakery{
 }
 
 fn main() {
-    Bakery::oven("anpanbot", "", vec!["garden", "princess-garden"]);
+    Bakery::oven("anpanbot", "", vec!["jewelisland", "princess-garden", "epic"]);
 
 
 }
