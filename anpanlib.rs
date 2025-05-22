@@ -14,7 +14,8 @@ use reqwest::header::USER_AGENT;
 use reqwest::header::HeaderValue;
 use html_escape::encode_text;
 mod rainbow;
-use rainbow::Rainbow; //found in extra-stuff repository. i do not own this code.
+use rainbow::Rainbow;
+use std::sync::{Arc, Mutex};//found in extra-stuff repository. i do not own this code.
 
 
 
@@ -96,10 +97,29 @@ struct Chat{
     cumsock: TcpStream,
     wbyte: String,
     byteready: bool,
-    connections: HashMap<String, TcpStream>,
     font_color: String,
     name_color: String,
     font_size: i32,
+    mgr: Option<Arc<Mutex<Bakery>>>,
+    username: String,
+    password: String,
+}
+
+impl Clone for Chat {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            cumsock: self.cumsock.try_clone().expect("Failed to clone TcpStream"),
+            wbyte: self.wbyte.clone(),
+            byteready: self.byteready,
+            font_color: self.font_color.clone(),
+            name_color: self.name_color.clone(),
+            font_size: self.font_size,
+            mgr: self.mgr.clone(),
+            username: self.username.clone(),
+            password: self.password.clone(),
+        }
+    }
 }
 
 impl Chat{
@@ -115,24 +135,27 @@ impl Chat{
             cumsock: TcpStream::connect(server).unwrap(),
             wbyte: "".to_string(),
             byteready: false,
-            connections: HashMap::new(),
+            mgr: None,
             name_color: "C7A793".to_string(),
             font_color: "F7DCCE".to_string(),
             font_size: 10,
+            username,
+            password,
         };
+
         chat.cumsock.set_nonblocking(true).expect("set_nonblocking call failed");
         if ctype == "chat" {
-            chat.chat_login(username, password);
+            chat.chat_login();
         } else {
-            chat.pm_login(username, password);
+            chat.pm_login();
         };
         chat
     }
 
-    fn chat_login(&mut self, username: String, password: String){
+    fn chat_login(&mut self){
 
         let chat_id = rand::thread_rng().gen_range(10_u128.pow(15)..10_u128.pow(16)).to_string();
-        self.chat_send(vec!["bauth", &self.name.clone(), &chat_id, &username, &password], None);
+        self.chat_send(vec!["bauth", &self.name.clone(), &chat_id, &self.username.clone(), &self.password.clone()]);
         self.byteready = true;
         let mut socket_clone = self.cumsock.try_clone().expect("Failed to clone socket");
         thread::spawn(move || {
@@ -146,9 +169,9 @@ impl Chat{
 
     }
 
-    fn pm_login(&mut self, username: String, password: String){
+    fn pm_login(&mut self){
 
-        let auth = auth(&username, &password);
+        let auth = auth(&self.username.clone(), &self.password.clone());
         let to_send = format!("tlogin:{}:2\x00", auth);
         let _ = self.cumsock.write(to_send.as_bytes()).unwrap();
         let mut socket_clone = self.cumsock.try_clone().expect("Failed to clone socket");
@@ -162,7 +185,14 @@ impl Chat{
 
     }
 
-    fn chat_send(&mut self, data: Vec<&str>, conn: Option<TcpStream>){
+    fn chat_join(&mut self, args: &str) {
+        let chat = Chat::new(args.to_string(), self.username.clone(), self.password.clone(), "chat");
+        let bakery = self.mgr.as_ref().unwrap().clone();
+        let mut bakery =  bakery.lock().unwrap();
+        bakery.connections.push(chat);
+    }
+
+    fn chat_send(&mut self, data: Vec<&str>){
         let ending = if self.byteready {
             "\r\n\x00"
         } else{
@@ -170,28 +200,28 @@ impl Chat{
         };
         let data = data.join(":");
         let data = format!("{}{}", data, ending);
-        if let Some(mut cumsock) = conn {
-            cumsock.write(data.as_bytes());
-        } else {
-            self.cumsock.write(data.as_bytes());
-        };
+
+        self.cumsock.write(data.as_bytes());
 
     }
 
-    fn chat_post(&mut self, args: &str, conn: Option<TcpStream>){
+    fn chat_post(&mut self, args: &str){
         let message  = format!("<n{}/><f x{}{}=\"0\">{}</f>\r\n\x00", &self.name_color, &self.font_size, &self.font_color,  args);
-        self.chat_send(vec!["bm","fuck", "2048", &message], conn);
+        self.chat_send(vec!["bm","fuck", "2048", &message]);
 
     }
 
-    fn send_to_chat(&mut self, room: &str, args: &str){
-
-        if self.connections.contains_key(room){
-            self.chat_post(&args, Some(self.connections[room].try_clone().expect("failed to clone.")));
-            self.chat_post("Done.", None);
-        } else {
-            self.chat_post("I am not in that room.", None)
-        };
+   fn send_to_chat(&mut self, room: &str, args: &str){
+        println!("derp1");
+        let bakery = self.mgr.as_ref().unwrap().clone();
+        let mut bakery =  bakery.lock().unwrap();
+        println!("derp2");
+        for i in &mut bakery.connections{
+            if &i.name == room {
+                i.chat_post(&args);
+                self.chat_post("Done.");
+            };
+        }
 
 
     }
@@ -247,10 +277,10 @@ impl Chat{
     }
 
     fn event_inited(&mut self, data: &[&str]){
-        self.chat_send(vec!["getpremium", "1"], None);
-        self.chat_send(vec!["g_participants", "start"], None);
-        self.chat_send(vec!["getbannedwords"], None);
-        self.chat_send(vec!["msgbg", "1"], None);
+        self.chat_send(vec!["getpremium", "1"]);
+        self.chat_send(vec!["g_participants", "start"]);
+        self.chat_send(vec!["getbannedwords"]);
+        self.chat_send(vec!["msgbg", "1"]);
         println!("logged into: {}", &self.name);
     }
 
@@ -282,13 +312,14 @@ impl Chat{
         let mods = vec!["succubus", "herenti", "bunny", "serpent"];
         match command {
             "say" => {
-                self.chat_post(&args, None);
+                self.chat_post(&args);
             }
             "rainbow" => {
                 let size = "12";
                 let rainbowed = Rainbow::rainbow_text(&args, size);
-                self.chat_post(&rainbowed, None);
+                self.chat_post(&rainbowed);
             }
+
             "send" => {
                 let user = message.user.as_str();
                 if mods.contains(&user){
@@ -298,7 +329,16 @@ impl Chat{
                     let message = args[1..].join(" ");
                     self.send_to_chat(room, &message);
                 } else {
-                    self.chat_post("You do not have permission to use this command.", None);
+                    self.chat_post("You do not have permission to use this command.");
+                }
+            }
+            "join" => {
+                let user = message.user.as_str();
+                if mods.contains(&user){
+                    self.chat_join(&args);
+                    self.chat_post("Done.");
+                } else {
+                    self.chat_post("You do not have permission to use this command.");
                 }
             }
             "rsend" => {
@@ -312,12 +352,13 @@ impl Chat{
                     let rainbowed = Rainbow::rainbow_text(&message, size);
                     self.send_to_chat(room, &rainbowed);
                 } else {
-                    self.chat_post("You do not have permission to use this command.", None);
+                    self.chat_post("You do not have permission to use this command.");
                 }
                 }
+
             _ => {
 
-                self.chat_post("Unknown command", None);
+                self.chat_post("Unknown command");
             }
 
         }
@@ -341,31 +382,40 @@ impl Bakery{
         for i in room_list{
             let chat = Chat::new(i.to_string(), username.to_string(), password.to_string(), "chat");
 
-            bakery.connections.insert(bakery.connections.len(), chat);
+            bakery.connections.push(chat);
         };
         let chat = Chat::new("_pm".to_string(), username.to_string(), password.to_string(), "pm");
-        bakery.connections.insert(bakery.connections.len(), chat);
+        bakery.connections.push(chat);
 
-        let mut cloned_conn = vec![];
 
-        for i in &mut bakery.connections{
-            cloned_conn.push((i.name.clone(), i.cumsock.try_clone().expect("Failed to clone")));
-        }
 
-        for chat in &mut bakery.connections {
-            for (name, cumsock) in &mut cloned_conn {
-                chat.connections.insert(name.clone(), cumsock.try_clone().expect("Failed to clone."));
-            }
-        }
-        bakery.breadbun();
+
         bakery
 
     }
 
-    fn breadbun(&mut self){
+
+}
+
+fn main() {
+
+    let bakery = Arc::new(Mutex::new(Bakery::oven("", "", vec!["", "", ""])));
+    {
+        let mut clone_bakery = bakery.lock().unwrap();
+        for i in &mut clone_bakery.connections {
+            i.mgr = Some(Arc::clone(&bakery));
+        }
+    }
+    breadbun(Arc::clone(&bakery));
+
+    fn breadbun(bakery: Arc<Mutex<Bakery>>) {
         let anpan_is_tasty = true;
         while anpan_is_tasty {
-            for con in &mut self.connections{
+            let mut conns_clone = {
+                let bakery = bakery.lock().unwrap();
+                bakery.connections.clone()
+            };
+            for con in &mut conns_clone {
                 let mut buf = [0; 1024];
                 if let Ok(len) = con.cumsock.read(&mut buf) {
                     if len > 0 {
@@ -383,10 +433,6 @@ impl Bakery{
             }
         }
     }
-}
-
-fn main() {
-    Bakery::oven("", "", vec!["","", ""]);
 
 
 }
