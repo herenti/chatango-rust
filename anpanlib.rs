@@ -14,8 +14,8 @@ use reqwest::header::USER_AGENT;
 use reqwest::header::HeaderValue;
 use html_escape::encode_text;
 mod rainbow;
-use rainbow::Rainbow;
-use std::sync::{Arc, Mutex};//found in extra-stuff repository. i do not own this code.
+use rainbow::Rainbow; //found in extra-stuff repository. i do not own this code.
+use std::sync::{Arc, Mutex};
 
 
 
