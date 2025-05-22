@@ -1,6 +1,6 @@
 /*
- TODO: CLEAN UP CODE AND ADD EVENTS.
-*/
+ * TODO: CLEAN UP CODE AND ADD EVENTS.
+ */
 
 
 use std::net::TcpStream;
@@ -95,13 +95,17 @@ struct Chat{
     name: String,
     cumsock: TcpStream,
     wbyte: String,
-    byteready: bool
+    byteready: bool,
+    connections: HashMap<String, TcpStream>,
+    font_color: String,
+    name_color: String,
+    font_size: i32,
 }
 
 impl Chat{
     fn new(name: String, username: String, password: String, ctype: &str) -> Self {
         let server = if ctype == "chat" {
-        g_server(name.clone())
+            g_server(name.clone())
         } else {
             let server = "c1.chatango.com:5222".to_string();
             server
@@ -111,10 +115,14 @@ impl Chat{
             cumsock: TcpStream::connect(server).unwrap(),
             wbyte: "".to_string(),
             byteready: false,
+            connections: HashMap::new(),
+            name_color: "C7A793".to_string(),
+            font_color: "F7DCCE".to_string(),
+            font_size: 10,
         };
         chat.cumsock.set_nonblocking(true).expect("set_nonblocking call failed");
         if ctype == "chat" {
-        chat.chat_login(username, password);
+            chat.chat_login(username, password);
         } else {
             chat.pm_login(username, password);
         };
@@ -124,7 +132,7 @@ impl Chat{
     fn chat_login(&mut self, username: String, password: String){
 
         let chat_id = rand::thread_rng().gen_range(10_u128.pow(15)..10_u128.pow(16)).to_string();
-        self.chat_send(vec!["bauth", &self.name.clone(), &chat_id, &username, &password]);
+        self.chat_send(vec!["bauth", &self.name.clone(), &chat_id, &username, &password], None);
         self.byteready = true;
         let mut socket_clone = self.cumsock.try_clone().expect("Failed to clone socket");
         thread::spawn(move || {
@@ -154,7 +162,7 @@ impl Chat{
 
     }
 
-    fn chat_send(&mut self, data: Vec<&str>){
+    fn chat_send(&mut self, data: Vec<&str>, conn: Option<TcpStream>){
         let ending = if self.byteready {
             "\r\n\x00"
         } else{
@@ -162,13 +170,29 @@ impl Chat{
         };
         let data = data.join(":");
         let data = format!("{}{}", data, ending);
-        self.cumsock.write(data.as_bytes());
+        if let Some(mut cumsock) = conn {
+            cumsock.write(data.as_bytes());
+        } else {
+            self.cumsock.write(data.as_bytes());
+        };
 
     }
 
-    fn chat_post(&mut self, args: &str){
-        let message  = format!("<n000000/><f x12000000=\"0\">{}</f>\r\n\x00", args);
-        self.chat_send(vec!["bm","fuck", "2048", &message]);
+    fn chat_post(&mut self, args: &str, conn: Option<TcpStream>){
+        let message  = format!("<n{}/><f x{}{}=\"0\">{}</f>\r\n\x00", &self.name_color, &self.font_size, &self.font_color,  args);
+        self.chat_send(vec!["bm","fuck", "2048", &message], conn);
+
+    }
+
+    fn send_to_chat(&mut self, room: &str, args: &str){
+
+        if self.connections.contains_key(room){
+            self.chat_post(&args, Some(self.connections[room].try_clone().expect("failed to clone.")));
+            self.chat_post("Done.", None);
+        } else {
+            self.chat_post("I am not in that room.", None)
+        };
+
 
     }
 
@@ -178,7 +202,9 @@ impl Chat{
         //println!("event: {:?} data: {:?}", event, data);
         if *event == "b"{
             self.event_b(data);
-
+        }
+        if *event == "inited"{
+            self.event_inited(data);
         }
     }
 
@@ -220,6 +246,15 @@ impl Chat{
 
     }
 
+    fn event_inited(&mut self, data: &[&str]){
+        self.chat_send(vec!["getpremium", "1"], None);
+        self.chat_send(vec!["g_participants", "start"], None);
+        self.chat_send(vec!["getbannedwords"], None);
+        self.chat_send(vec!["msgbg", "1"], None);
+        println!("logged into: {}", &self.name);
+    }
+
+
     fn on_post(&mut self, message: Message){
         //println!("{}: {}", message.user, message.content);
         if message.content.to_lowercase().contains("herenti"){
@@ -237,25 +272,54 @@ impl Chat{
                 };
                 let command = command.replace("$", "");
                 let command = command.to_lowercase();
-                match command.as_str() {
-                    "say" => {
-                        self.chat_post(&args);
-                    }
-                    "rainbow" => {
-                        let size = "12";
-                        let rainbowed = Rainbow::rainbow_text(&args, size);
-                        self.chat_post(&rainbowed);
-                    }
-                    _ => {
-
-                       self.chat_post("Unknown command");
-                    }
-
-                }
-
-
+                self.commands(message, &command, &args);
 
             }
+        }
+    }
+
+    fn commands(&mut self, message: Message, command: &str, args: &str){
+        let mods = vec!["succubus", "herenti", "bunny", "serpent"];
+        match command {
+            "say" => {
+                self.chat_post(&args, None);
+            }
+            "rainbow" => {
+                let size = "12";
+                let rainbowed = Rainbow::rainbow_text(&args, size);
+                self.chat_post(&rainbowed, None);
+            }
+            "send" => {
+                let user = message.user.as_str();
+                if mods.contains(&user){
+                    let args = args.split(" ");
+                    let args = args.collect::<Vec<&str>>();
+                    let room = args[0];
+                    let message = args[1..].join(" ");
+                    self.send_to_chat(room, &message);
+                } else {
+                    self.chat_post("You do not have permission to use this command.", None);
+                }
+            }
+            "rsend" => {
+                let user = message.user.as_str();
+                if mods.contains(&user){
+                    let args = args.split(" ");
+                    let args = args.collect::<Vec<&str>>();
+                    let room = args[0];
+                    let message = args[1..].join(" ");
+                    let size = "12";
+                    let rainbowed = Rainbow::rainbow_text(&message, size);
+                    self.send_to_chat(room, &rainbowed);
+                } else {
+                    self.chat_post("You do not have permission to use this command.", None);
+                }
+                }
+            _ => {
+
+                self.chat_post("Unknown command", None);
+            }
+
         }
     }
 
@@ -271,7 +335,7 @@ struct Bakery{
 impl Bakery{
 
     fn oven(username: &str, password: &str, room_list: Vec<&str>) -> Self {
-       let mut bakery = Bakery {
+        let mut bakery = Bakery {
             connections: vec![],
         };
         for i in room_list{
@@ -281,6 +345,18 @@ impl Bakery{
         };
         let chat = Chat::new("_pm".to_string(), username.to_string(), password.to_string(), "pm");
         bakery.connections.insert(bakery.connections.len(), chat);
+
+        let mut cloned_conn = vec![];
+
+        for i in &mut bakery.connections{
+            cloned_conn.push((i.name.clone(), i.cumsock.try_clone().expect("Failed to clone")));
+        }
+
+        for chat in &mut bakery.connections {
+            for (name, cumsock) in &mut cloned_conn {
+                chat.connections.insert(name.clone(), cumsock.try_clone().expect("Failed to clone."));
+            }
+        }
         bakery.breadbun();
         bakery
 
@@ -290,19 +366,19 @@ impl Bakery{
         let anpan_is_tasty = true;
         while anpan_is_tasty {
             for con in &mut self.connections{
-                    let mut buf = [0; 1024];
-                    if let Ok(len) = con.cumsock.read(&mut buf) {
-                        if len > 0 {
-                            let data = &buf[..len];
-                            for x in data.split(|b| b == &0x00) {
-                                let s = String::from_utf8_lossy(x);
-                                let s = s.trim();
-                                let s = s.split(":");
-                                let collection = s.collect::<Vec<&str>>();
-                                con.events(collection);
-                            }
+                let mut buf = [0; 1024];
+                if let Ok(len) = con.cumsock.read(&mut buf) {
+                    if len > 0 {
+                        let data = &buf[..len];
+                        for x in data.split(|b| b == &0x00) {
+                            let s = String::from_utf8_lossy(x);
+                            let s = s.trim();
+                            let s = s.split(":");
+                            let collection = s.collect::<Vec<&str>>();
+                            con.events(collection);
                         }
                     }
+                }
 
             }
         }
@@ -310,7 +386,7 @@ impl Bakery{
 }
 
 fn main() {
-    Bakery::oven("anpanbot", "", vec!["princess-garden","jewelisland", "epic"]);
+    Bakery::oven("", "", vec!["","", ""]);
 
 
 }
