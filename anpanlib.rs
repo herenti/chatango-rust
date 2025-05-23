@@ -1,5 +1,5 @@
 /*
- * TODO: CLEAN UP CODE, ADD MORE EVENTS, REDUCE RELIANCE ON BORROWING/RESTRUCTURE CODE (possibly done). COMMANDS AS SEPERATE MODULE.
+ * TODO: CLEAN UP CODE, ADD MORE EVENTS, REDUCE RELIANCE ON CLONING/RESTRUCTURE CODE (possibly done). COMMANDS AS SEPERATE MODULE.
  * This is a fully functional chatango library written in rust.
  * I am a newbie coder to rust, so the code may be sloppy. If someone wants to add suggestions for the code structure, contact me on discord @herenti.
 */
