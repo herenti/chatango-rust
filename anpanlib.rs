@@ -1,5 +1,8 @@
 /*
- * TODO: CLEAN UP CODE AND ADD EVENTS.
+ * TODO: CLEAN UP CODE, ADD MORE EVENTS, REDUCE RELIANCE ON BORROWING/RESTRUCTURE CODE. COMMANDS AS SEPERATE MODULE.
+ * This is a fully functional chatango library written in rust.
+ * I am a newbie coder to rust, so the code may be sloppy. If someone wants to add suggestions for the code structure, contact me on discord @herenti.
+ *
  */
 
 
@@ -290,7 +293,7 @@ impl Chat{
         if message.content.to_lowercase().contains("herenti"){
             println!("{}: {}: {}", message.user, message.chat, message.content)
         }
-        if message.chat != "jewelisland".to_string(){
+        if message.chat != "".to_string(){
             if message.content.starts_with("$") {
                 let args = message.content.split(" ");
                 let args: Vec<&str> = args.collect();
@@ -309,7 +312,7 @@ impl Chat{
     }
 
     fn commands(&mut self, message: Message, command: &str, args: &str){
-        let mods = vec!["succubus", "herenti", "bunny", "serpent"];
+        let mods = vec![""];
         match command {
             "say" => {
                 self.chat_post(&args);
@@ -399,7 +402,7 @@ impl Bakery{
 
 fn main() {
 
-    let bakery = Arc::new(Mutex::new(Bakery::oven("", "", vec!["", "", ""])));
+    let bakery = Arc::new(Mutex::new(Bakery::oven("", "", vec![""])));
     {
         let mut clone_bakery = bakery.lock().unwrap();
         for i in &mut clone_bakery.connections {
