@@ -2,8 +2,7 @@
  * TODO: CLEAN UP CODE, ADD MORE EVENTS, REDUCE RELIANCE ON BORROWING/RESTRUCTURE CODE. COMMANDS AS SEPERATE MODULE.
  * This is a fully functional chatango library written in rust.
  * I am a newbie coder to rust, so the code may be sloppy. If someone wants to add suggestions for the code structure, contact me on discord @herenti.
- *
- */
+*/
 
 
 use std::net::TcpStream;
@@ -17,8 +16,9 @@ use reqwest::header::USER_AGENT;
 use reqwest::header::HeaderValue;
 use html_escape::encode_text;
 mod rainbow;
-use rainbow::Rainbow; //found in extra-stuff repository. i do not own this code.
+use rainbow::Rainbow; //found in my extra-stuff repository. i do not own this code.
 use std::sync::{Arc, Mutex};
+use serde_json;
 
 
 
@@ -81,6 +81,16 @@ fn auth(user: &str, pass: &str) -> String {
     let extract = re.captures(cookie).unwrap().get(1);
     let extract = extract.unwrap().as_str().to_string();
     extract
+}
+
+fn youtube(search: &str) -> String {
+    let url = format!("https://www.googleapis.com/youtube/v3/search?q={}&key=&type=video&maxResults=1&part=snippet", search);
+    let res = reqwest::blocking::get(url).expect("REASON").text().unwrap();
+    let data: serde_json::Value = serde_json::from_str(&res).unwrap();
+    let _id = &data["items"][0]["id"]["videoId"].as_str().unwrap();
+    let _title = &data["items"][0]["snippet"]["title"].as_str().unwrap();
+    format!("https://www.youtube.com/watch?v={}\r\r\r\rVideo title [<b>{}</b>]", _id, _title)
+
 }
 
 
@@ -293,7 +303,7 @@ impl Chat{
         if message.content.to_lowercase().contains("herenti"){
             println!("{}: {}: {}", message.user, message.chat, message.content)
         }
-        if message.chat != "".to_string(){
+        if message.chat != "jewelisland".to_string(){
             if message.content.starts_with("$") {
                 let args = message.content.split(" ");
                 let args: Vec<&str> = args.collect();
@@ -316,6 +326,9 @@ impl Chat{
         match command {
             "say" => {
                 self.chat_post(&args);
+            }
+            "yt" => {
+                self.chat_post(&youtube(&args));
             }
             "rainbow" => {
                 let size = "12";
