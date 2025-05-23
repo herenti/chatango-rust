@@ -1,5 +1,5 @@
 /*
- * TODO: CLEAN UP CODE, ADD MORE EVENTS, REDUCE RELIANCE ON BORROWING/RESTRUCTURE CODE. COMMANDS AS SEPERATE MODULE.
+ * TODO: CLEAN UP CODE, ADD MORE EVENTS, REDUCE RELIANCE ON BORROWING/RESTRUCTURE CODE (possibly done). COMMANDS AS SEPERATE MODULE.
  * This is a fully functional chatango library written in rust.
  * I am a newbie coder to rust, so the code may be sloppy. If someone wants to add suggestions for the code structure, contact me on discord @herenti.
 */
@@ -16,7 +16,7 @@ use reqwest::header::USER_AGENT;
 use reqwest::header::HeaderValue;
 use html_escape::encode_text;
 mod rainbow;
-use rainbow::Rainbow; //found in my extra-stuff repository. i do not own this code.
+use rainbow::Rainbow; //found in extra-stuff repository. i do not own this code.
 use std::sync::{Arc, Mutex};
 use serde_json;
 
@@ -84,12 +84,18 @@ fn auth(user: &str, pass: &str) -> String {
 }
 
 fn youtube(search: &str) -> String {
-    let url = format!("https://www.googleapis.com/youtube/v3/search?q={}&key=&type=video&maxResults=1&part=snippet", search);
+    let url = format!("https://www.googleapis.com/youtube/v3/search?q={}&key=AIzaSyBPXEemy53RKTrOAsCN-UPCRhfARbyvKs0&type=video&maxResults=1&part=snippet", search);
     let res = reqwest::blocking::get(url).expect("REASON").text().unwrap();
     let data: serde_json::Value = serde_json::from_str(&res).unwrap();
-    let _id = &data["items"][0]["id"]["videoId"].as_str().unwrap();
-    let _title = &data["items"][0]["snippet"]["title"].as_str().unwrap();
-    format!("https://www.youtube.com/watch?v={}\r\r\r\rVideo title [<b>{}</b>]", _id, _title)
+    let result = if data["items"][0]["id"]["videoId"].as_str().is_some(){
+        let _id = &data["items"][0]["id"]["videoId"].as_str().unwrap();
+        let _title = &data["items"][0]["snippet"]["title"].as_str().unwrap();
+        format!("https://www.youtube.com/watch?v={}\r\r\r\rVideo title [<b>{}</b>]", _id, _title)
+    } else {
+        "No video found.".to_string()
+    };
+    result
+
 
 }
 
@@ -110,29 +116,8 @@ struct Chat{
     cumsock: TcpStream,
     wbyte: String,
     byteready: bool,
-    font_color: String,
-    name_color: String,
-    font_size: i32,
-    mgr: Option<Arc<Mutex<Bakery>>>,
     username: String,
     password: String,
-}
-
-impl Clone for Chat {
-    fn clone(&self) -> Self {
-        Self {
-            name: self.name.clone(),
-            cumsock: self.cumsock.try_clone().expect("Failed to clone TcpStream"),
-            wbyte: self.wbyte.clone(),
-            byteready: self.byteready,
-            font_color: self.font_color.clone(),
-            name_color: self.name_color.clone(),
-            font_size: self.font_size,
-            mgr: self.mgr.clone(),
-            username: self.username.clone(),
-            password: self.password.clone(),
-        }
-    }
 }
 
 impl Chat{
@@ -148,10 +133,6 @@ impl Chat{
             cumsock: TcpStream::connect(server).unwrap(),
             wbyte: "".to_string(),
             byteready: false,
-            mgr: None,
-            name_color: "C7A793".to_string(),
-            font_color: "F7DCCE".to_string(),
-            font_size: 10,
             username,
             password,
         };
@@ -167,7 +148,7 @@ impl Chat{
 
     fn chat_login(&mut self){
 
-        let chat_id = rand::thread_rng().gen_range(10_u128.pow(15)..10_u128.pow(16)).to_string();
+        let chat_id = rand::rng().random_range(10_u128.pow(15)..10_u128.pow(16)).to_string();
         self.chat_send(vec!["bauth", &self.name.clone(), &chat_id, &self.username.clone(), &self.password.clone()]);
         self.byteready = true;
         let mut socket_clone = self.cumsock.try_clone().expect("Failed to clone socket");
@@ -198,12 +179,6 @@ impl Chat{
 
     }
 
-    fn chat_join(&mut self, args: &str) {
-        let chat = Chat::new(args.to_string(), self.username.clone(), self.password.clone(), "chat");
-        let bakery = self.mgr.as_ref().unwrap().clone();
-        let mut bakery =  bakery.lock().unwrap();
-        bakery.connections.push(chat);
-    }
 
     fn chat_send(&mut self, data: Vec<&str>){
         let ending = if self.byteready {
@@ -218,30 +193,104 @@ impl Chat{
 
     }
 
-    fn chat_post(&mut self, args: &str){
-        let message  = format!("<n{}/><f x{}{}=\"0\">{}</f>\r\n\x00", &self.name_color, &self.font_size, &self.font_color,  args);
-        self.chat_send(vec!["bm","fuck", "2048", &message]);
+
+
+
+}
+
+
+struct Bakery{
+    connections: Vec<Chat>,
+    current_chat: String,
+    to_send_room: String,
+    username: String,
+    password: String,
+    font_color: String,
+    name_color: String,
+    font_size: i32,
+
+}
+
+impl Bakery{
+
+    fn oven(username: &str, password: &str, room_list: Vec<&str>) -> Self {
+        let mut bakery = Bakery {
+            connections: vec![],
+            current_chat: "None".to_string(),
+            to_send_room: "None".to_string(),
+            username: username.to_string(),
+            password: password.to_string(),
+            name_color: "C7A793".to_string(),
+            font_color: "F7DCCE".to_string(),
+            font_size: 10,
+        };
+        for i in room_list{
+            let chat = Chat::new(i.to_string(), username.to_string(), password.to_string(), "chat");
+
+            bakery.connections.push(chat);
+        };
+        let chat = Chat::new("_pm".to_string(), username.to_string(), password.to_string(), "pm");
+        bakery.connections.push(chat);
+
+
+
+
+        bakery
 
     }
 
-   fn send_to_chat(&mut self, room: &str, args: &str){
-        println!("derp1");
-        let bakery = self.mgr.as_ref().unwrap().clone();
-        let mut bakery =  bakery.lock().unwrap();
-        println!("derp2");
-        for i in &mut bakery.connections{
+    fn chat_post(&mut self, args: &str){
+        let room = if self.to_send_room != "None".to_string(){
+            &self.to_send_room
+        }
+        else {
+            &self.current_chat
+        };
+        let message  = format!("<n{}/><f x{}{}=\"0\">{}</f>\r\n\x00", &self.name_color, &self.font_size, &self.font_color,  args);
+        for i in &mut self.connections {
+            if i.name == room.to_string() {
+                i.chat_send(vec!["bm","fuck", "2048", &message]);
+            }
+        }
+
+    }
+
+    fn send_to_chat(&mut self, room: &str, args: &str){
+        for i in &mut self.connections{
             if &i.name == room {
-                i.chat_post(&args);
-                self.chat_post("Done.");
+                self.to_send_room = room.to_string();
             };
+        };
+        if self.to_send_room != "None".to_string(){
+            self.chat_post(&args);
+            self.to_send_room = "None".to_string();
+            self.chat_post("Done.");
+        }
+        else {
+            self.chat_post("I am not in that chat.")
         }
 
 
     }
 
-    fn events(&mut self, collection: Vec<&str>){
+    fn chat_join(&mut self, args: &str) {
+        let chat = Chat::new(args.to_string(), self.username.clone(), self.password.clone(), "chat");
+        self.connections.push(chat);
+    }
+
+    fn chat_send(&mut self, data: Vec<&str>){
+        for i in &mut self.connections {
+            if i.name == self.current_chat {
+                i.chat_send(data.clone());
+            }
+        }
+
+    }
+
+    fn events(&mut self, chatname: &str, collection: Vec<&str>){
         let event = &collection[0];
         let data = &collection[1..];
+        self.current_chat = chatname.to_string();
         //println!("event: {:?} data: {:?}", event, data);
         if *event == "b"{
             self.event_b(data);
@@ -281,7 +330,7 @@ impl Chat{
             sid: data[5].to_string(),
             ip: data[6].to_string(),
             content: content.to_string(),
-            chat: self.name.clone(),
+            chat: self.current_chat.clone(),
         };
 
         self.on_post(message);
@@ -294,7 +343,7 @@ impl Chat{
         self.chat_send(vec!["g_participants", "start"]);
         self.chat_send(vec!["getbannedwords"]);
         self.chat_send(vec!["msgbg", "1"]);
-        println!("logged into: {}", &self.name);
+        println!("logged into: {}", &self.current_chat);
     }
 
 
@@ -303,7 +352,7 @@ impl Chat{
         if message.content.to_lowercase().contains("herenti"){
             println!("{}: {}: {}", message.user, message.chat, message.content)
         }
-        if message.chat != "jewelisland".to_string(){
+        if message.chat != "".to_string(){
             if message.content.starts_with("$") {
                 let args = message.content.split(" ");
                 let args: Vec<&str> = args.collect();
@@ -323,6 +372,12 @@ impl Chat{
 
     fn commands(&mut self, message: Message, command: &str, args: &str){
         let mods = vec![""];
+        let user = message.user.as_str();
+        let ismod = if mods.contains(&user) {
+            true
+        } else {
+            false
+        };
         match command {
             "say" => {
                 self.chat_post(&args);
@@ -333,12 +388,15 @@ impl Chat{
             "rainbow" => {
                 let size = "12";
                 let rainbowed = Rainbow::rainbow_text(&args, size);
-                self.chat_post(&rainbowed);
+                if rainbowed.len() > 2490{
+                    self.chat_post("That message is too long for chatango.");
+                } else{
+                    self.chat_post(&rainbowed);
+                }
             }
 
             "send" => {
-                let user = message.user.as_str();
-                if mods.contains(&user){
+                if ismod {
                     let args = args.split(" ");
                     let args = args.collect::<Vec<&str>>();
                     let room = args[0];
@@ -349,8 +407,7 @@ impl Chat{
                 }
             }
             "join" => {
-                let user = message.user.as_str();
-                if mods.contains(&user){
+                if ismod {
                     self.chat_join(&args);
                     self.chat_post("Done.");
                 } else {
@@ -358,19 +415,22 @@ impl Chat{
                 }
             }
             "rsend" => {
-                let user = message.user.as_str();
-                if mods.contains(&user){
+                if ismod {
                     let args = args.split(" ");
                     let args = args.collect::<Vec<&str>>();
                     let room = args[0];
                     let message = args[1..].join(" ");
                     let size = "12";
                     let rainbowed = Rainbow::rainbow_text(&message, size);
-                    self.send_to_chat(room, &rainbowed);
+                    if rainbowed.len() > 2490{
+                        self.chat_post("That message is too long for chatango.");
+                    } else{
+                        self.send_to_chat(room, &rainbowed);
+                    }
                 } else {
                     self.chat_post("You do not have permission to use this command.");
                 }
-                }
+            }
 
             _ => {
 
@@ -383,57 +443,22 @@ impl Chat{
 
 }
 
-
-struct Bakery{
-    connections: Vec<Chat>,
-
-}
-
-impl Bakery{
-
-    fn oven(username: &str, password: &str, room_list: Vec<&str>) -> Self {
-        let mut bakery = Bakery {
-            connections: vec![],
-        };
-        for i in room_list{
-            let chat = Chat::new(i.to_string(), username.to_string(), password.to_string(), "chat");
-
-            bakery.connections.push(chat);
-        };
-        let chat = Chat::new("_pm".to_string(), username.to_string(), password.to_string(), "pm");
-        bakery.connections.push(chat);
-
-
-
-
-        bakery
-
-    }
-
-
-}
-
 fn main() {
 
-    let bakery = Arc::new(Mutex::new(Bakery::oven("", "", vec![""])));
-    {
-        let mut clone_bakery = bakery.lock().unwrap();
-        for i in &mut clone_bakery.connections {
-            i.mgr = Some(Arc::clone(&bakery));
-        }
-    }
-    breadbun(Arc::clone(&bakery));
+    let mut bakery = Bakery::oven("", "", vec![""]);
 
-    fn breadbun(bakery: Arc<Mutex<Bakery>>) {
+    breadbun(&mut bakery);
+
+    fn breadbun(bakery: &mut Bakery) {
         let anpan_is_tasty = true;
         while anpan_is_tasty {
-            let mut conns_clone = {
-                let bakery = bakery.lock().unwrap();
-                bakery.connections.clone()
+            let mut cloned_conn = vec![];
+            for i in &mut bakery.connections{
+                cloned_conn.push((i.name.clone(), i.cumsock.try_clone().expect("failed to clone socket.")));
             };
-            for con in &mut conns_clone {
+            for (name, mut con) in cloned_conn {
                 let mut buf = [0; 1024];
-                if let Ok(len) = con.cumsock.read(&mut buf) {
+                if let Ok(len) = con.read(&mut buf) {
                     if len > 0 {
                         let data = &buf[..len];
                         for x in data.split(|b| b == &0x00) {
@@ -441,7 +466,7 @@ fn main() {
                             let s = s.trim();
                             let s = s.split(":");
                             let collection = s.collect::<Vec<&str>>();
-                            con.events(collection);
+                            bakery.events(&name.clone(), collection);
                         }
                     }
                 }
