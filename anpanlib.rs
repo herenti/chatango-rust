@@ -1,5 +1,5 @@
 /*
- * TODO: CLEAN UP CODE, ADD MORE EVENTS, REDUCE RELIANCE ON CLONING/RESTRUCTURE CODE (tokio?). COMMANDS AS SEPERATE MODULE. MOVE ROOMLIST,MODS ETC TO CONFIG.
+ * TODO: CLEAN UP CODE, ADD MORE EVENTS. LOOK INTO USING TOKIO/ASYNC. COMMANDS AS SEPERATE MODULE. ANON ID, GETUSER FUNCTIONS
  * This is a fully functional chatango library written in rust.
  * I am a newbie coder to rust, so the code may be sloppy. If someone wants to add suggestions for the code structure, contact me on discord @herenti.
  */
@@ -16,8 +16,12 @@ use reqwest::header::USER_AGENT;
 use reqwest::header::HeaderValue;
 use html_escape;
 mod rainbow;
-use rainbow::Rainbow; //found in extra-stuff repository. i do not own this code.
+use rainbow::Rainbow; //found in my extra-stuff repository. i do not own this code.
 use serde_json;
+use colored::Colorize;
+
+
+const BOT_OWNER: &str = "herenti";
 
 fn g_server(mut group: String) -> String{
 
@@ -62,7 +66,7 @@ fn auth(user: &str, pass: &str) -> String {
     form.insert("storecookie", "on");
     form.insert("checkerrors", "yes");
     let client = reqwest::blocking::Client::new();
-    let res = client.post("http://chatango.com/login")
+    let res = client.post("https://chatango.com/login")
     .form(&form)
     .header(USER_AGENT, HeaderValue::from_static(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
@@ -100,20 +104,32 @@ struct Config {
     username: String,
     password: String,
     api_key: String,
+    room_list: Vec<String>,
+    mods: Vec<String>,
+    locked_rooms: Vec<String>,
 }
 
 impl Config{
     fn new () -> Self {
         let contents = std::fs::read_to_string("utils.txt").unwrap();
-        let contents = contents.split(":");
+        let contents = contents.trim().split(":");
         let contents = contents.collect::<Vec<&str>>();
+        if contents.len() < 6 {
+            println!("\r\n{} You must have a utils.txt for the bot with the following format\r\n{}\r\nThe moduser and lockedrooms can be left empty as long as there is a : to mark where they should be.\r\nPut the utils.txt in the same directory as the cargo.toml or the executable file.", "[ERROR READ ME]".red().bold(), "username:password:youtubeapikey:room1 room2 room3:moduser1 moduser2 moduser3:lockedroom1 lockedroom2 lockedroom3".green())
+        }
         let username = contents[0];
         let password = contents[1];
         let api_key = contents[2];
+        let room_list = contents[3].split(" ").map(|x| x.to_string()).collect();
+        let mods = contents[4].split(" ").map(|x| x.to_string()).collect();
+        let locked_rooms = contents[5].split(" ").map(|x| x.to_string()).collect();
         let config = Config {
             username: username.to_string(),
             password: password.to_string(),
             api_key: api_key.to_string(),
+            room_list: room_list,
+            mods: mods,
+            locked_rooms: locked_rooms,
         };
         config
     }
@@ -132,7 +148,6 @@ struct Message{
 
 struct Chat{
     name: String,
-    cleansock: TcpStream,
     cumsock: TcpStream,
     wbyte: String,
     byteready: bool,
@@ -148,12 +163,9 @@ impl Chat{
             let server = "c1.chatango.com:5222".to_string();
             server
         };
-        let stream = TcpStream::connect(server).unwrap();
-        let cleansock = stream.try_clone().expect("Clone failed.");
         let mut chat = Chat{
             name: name,
-            cumsock: stream,
-            cleansock: cleansock,
+            cumsock: TcpStream::connect(server).unwrap(),
             wbyte: "".to_string(),
             byteready: false,
             username,
@@ -161,7 +173,6 @@ impl Chat{
         };
 
         chat.cumsock.set_nonblocking(true).expect("set_nonblocking call failed");
-        chat.cleansock.set_nonblocking(true).expect("set_nonblocking call failed");
         if ctype == "chat" {
             chat.chat_login();
         } else {
@@ -236,12 +247,15 @@ struct Bakery{
     name_color: String,
     font_size: i32,
     api_key: String,
+    room_list: Vec<String>,
+    mods: Vec<String>,
+    locked_rooms: Vec<String>,
 
 }
 
 impl Bakery{
 
-    fn oven(room_list: Vec<&str>) -> Self {
+    fn oven() -> Self {
         let config = Config::new();
         let mut bakery = Bakery {
             connections: vec![],
@@ -252,14 +266,17 @@ impl Bakery{
             name_color: "C7A793".to_string(),
             font_color: "F7DCCE".to_string(),
             font_size: 10,
-            api_key: config.api_key.clone(),
+            api_key: config.api_key,
+            room_list: config.room_list,
+            mods: config.mods,
+            locked_rooms: config.locked_rooms,
         };
-        for i in room_list{
+        for i in &mut bakery.room_list{
             let chat = Chat::new(i.to_string(), config.username.clone(), config.password.clone(), "chat");
 
             bakery.connections.push(chat);
         };
-        let chat = Chat::new("_pm".to_string(), config.username.clone(), config.password.clone(), "pm");
+        let chat = Chat::new("_pm".to_string(), config.username, config.password, "pm");
         bakery.connections.push(chat);
 
 
@@ -318,7 +335,7 @@ impl Bakery{
     }
 
     fn events(&mut self, chatname: &str, collection: Vec<String>){
-        let collection: Vec<&str> = collection.iter().map(|s| s.as_str()).collect();
+        let collection: Vec<&str> = collection.iter().map(|x| x.as_str()).collect();
         let event = &collection[0];
         let data = &collection[1..];
         self.current_chat = chatname.to_string();
@@ -380,10 +397,10 @@ impl Bakery{
 
     fn on_post(&mut self, message: Message){
         //println!("{}: {}", message.user, message.content);
-        if message.content.to_lowercase().contains("herenti"){
-            println!("{}: {}: {}", message.user, message.chat, message.content)
+        if message.content.to_lowercase().contains(BOT_OWNER){
+            println!("{}: {}: {}", message.chat.green(), message.user.blue(), message.content)
         }
-        if message.chat != "jewelisland".to_string(){
+        if !self.locked_rooms.contains(&message.chat){
             if message.content.starts_with("$") {
                 let args = message.content.split(" ");
                 let args: Vec<&str> = args.collect();
@@ -402,9 +419,7 @@ impl Bakery{
     }
 
     fn commands(&mut self, message: Message, command: &str, args: &str){
-        let mods = vec![""];
-        let user = message.user.as_str();
-        let ismod = if mods.contains(&user) {
+        let ismod = if self.mods.contains(&message.user) {
             true
         } else {
             false
@@ -468,6 +483,7 @@ impl Bakery{
                 self.chat_post("Unknown command");
             }
 
+
         }
     }
 
@@ -477,7 +493,7 @@ impl Bakery{
 fn main() {
 
 
-    let mut bakery = Bakery::oven(vec![""]);
+    let mut bakery = Bakery::oven();
 
     breadbun(&mut bakery);
 
@@ -487,16 +503,12 @@ fn main() {
             let mut results = vec![];
             for conn in &mut bakery.connections {
                 let mut buf = [0; 1024];
-                if let Ok(len) = conn.cleansock.read(&mut buf) {
+                if let Ok(len) = conn.cumsock.read(&mut buf) {
                     if len > 0 {
                         let data = &buf[..len];
                         for x in data.split(|b| b == &0x00) {
                             let s = String::from_utf8_lossy(x).trim().to_string();
-                            let mut collection = vec![];
-                            for i in s.split(":"){
-                                collection.push(i.to_string());
-                            }
-
+                            let collection = s.split(":").map(|x| x.to_string()).collect();
                             results.push((conn.name.clone(), collection));
                         }
                     }
