@@ -1,8 +1,8 @@
 /*
- * TODO: CLEAN UP CODE, ADD MORE EVENTS, REDUCE RELIANCE ON CLONING/RESTRUCTURE CODE (possibly done). COMMANDS AS SEPERATE MODULE.
+ * TODO: CLEAN UP CODE, ADD MORE EVENTS, REDUCE RELIANCE ON CLONING/RESTRUCTURE CODE (tokio?). COMMANDS AS SEPERATE MODULE. MOVE ROOMLIST,MODS ETC TO CONFIG.
  * This is a fully functional chatango library written in rust.
  * I am a newbie coder to rust, so the code may be sloppy. If someone wants to add suggestions for the code structure, contact me on discord @herenti.
-*/
+ */
 
 
 use std::net::TcpStream;
@@ -14,13 +14,10 @@ use regex::Regex;
 use std::collections::HashMap;
 use reqwest::header::USER_AGENT;
 use reqwest::header::HeaderValue;
-use html_escape::encode_text;
+use html_escape;
 mod rainbow;
 use rainbow::Rainbow; //found in extra-stuff repository. i do not own this code.
-use std::sync::{Arc, Mutex};
 use serde_json;
-
-
 
 fn g_server(mut group: String) -> String{
 
@@ -83,8 +80,8 @@ fn auth(user: &str, pass: &str) -> String {
     extract
 }
 
-fn youtube(search: &str) -> String {
-    let url = format!("https://www.googleapis.com/youtube/v3/search?q={}&key=AIzaSyBPXEemy53RKTrOAsCN-UPCRhfARbyvKs0&type=video&maxResults=1&part=snippet", search);
+fn youtube(api_key: &str, search: &str) -> String {
+    let url = format!("https://www.googleapis.com/youtube/v3/search?q={}&key={}&type=video&maxResults=1&part=snippet", search, api_key);
     let res = reqwest::blocking::get(url).expect("REASON").text().unwrap();
     let data: serde_json::Value = serde_json::from_str(&res).unwrap();
     let result = if data["items"][0]["id"]["videoId"].as_str().is_some(){
@@ -99,6 +96,28 @@ fn youtube(search: &str) -> String {
 
 }
 
+struct Config {
+    username: String,
+    password: String,
+    api_key: String,
+}
+
+impl Config{
+    fn new () -> Self {
+        let contents = std::fs::read_to_string("utils.txt").unwrap();
+        let contents = contents.split(":");
+        let contents = contents.collect::<Vec<&str>>();
+        let username = contents[0];
+        let password = contents[1];
+        let api_key = contents[2];
+        let config = Config {
+            username: username.to_string(),
+            password: password.to_string(),
+            api_key: api_key.to_string(),
+        };
+        config
+    }
+}
 
 struct Message{
     user: String,
@@ -113,6 +132,7 @@ struct Message{
 
 struct Chat{
     name: String,
+    cleansock: TcpStream,
     cumsock: TcpStream,
     wbyte: String,
     byteready: bool,
@@ -128,9 +148,12 @@ impl Chat{
             let server = "c1.chatango.com:5222".to_string();
             server
         };
+        let stream = TcpStream::connect(server).unwrap();
+        let cleansock = stream.try_clone().expect("Clone failed.");
         let mut chat = Chat{
             name: name,
-            cumsock: TcpStream::connect(server).unwrap(),
+            cumsock: stream,
+            cleansock: cleansock,
             wbyte: "".to_string(),
             byteready: false,
             username,
@@ -138,6 +161,7 @@ impl Chat{
         };
 
         chat.cumsock.set_nonblocking(true).expect("set_nonblocking call failed");
+        chat.cleansock.set_nonblocking(true).expect("set_nonblocking call failed");
         if ctype == "chat" {
             chat.chat_login();
         } else {
@@ -155,7 +179,8 @@ impl Chat{
         thread::spawn(move || {
             loop {
                 let data = b"\r\n\x00";
-                socket_clone.write(data);
+                let _ = socket_clone.write(data);
+                let _ = socket_clone.flush();
                 thread::sleep(Duration::from_secs(20));
 
             }
@@ -173,7 +198,8 @@ impl Chat{
             loop {
                 thread::sleep(Duration::from_secs(20));
                 let data = b"\r\n\x00";
-                socket_clone.write(data);
+                let _ = socket_clone.write(data);
+                let _ = socket_clone.flush();
             }
         });
 
@@ -189,7 +215,8 @@ impl Chat{
         let data = data.join(":");
         let data = format!("{}{}", data, ending);
 
-        self.cumsock.write(data.as_bytes());
+        let _ = self.cumsock.write(data.as_bytes());
+        let _ = self.cumsock.flush();
 
     }
 
@@ -208,28 +235,31 @@ struct Bakery{
     font_color: String,
     name_color: String,
     font_size: i32,
+    api_key: String,
 
 }
 
 impl Bakery{
 
-    fn oven(username: &str, password: &str, room_list: Vec<&str>) -> Self {
+    fn oven(room_list: Vec<&str>) -> Self {
+        let config = Config::new();
         let mut bakery = Bakery {
             connections: vec![],
             current_chat: "None".to_string(),
             to_send_room: "None".to_string(),
-            username: username.to_string(),
-            password: password.to_string(),
+            username: config.username.clone(),
+            password: config.password.clone(),
             name_color: "C7A793".to_string(),
             font_color: "F7DCCE".to_string(),
             font_size: 10,
+            api_key: config.api_key.clone(),
         };
         for i in room_list{
-            let chat = Chat::new(i.to_string(), username.to_string(), password.to_string(), "chat");
+            let chat = Chat::new(i.to_string(), config.username.clone(), config.password.clone(), "chat");
 
             bakery.connections.push(chat);
         };
-        let chat = Chat::new("_pm".to_string(), username.to_string(), password.to_string(), "pm");
+        let chat = Chat::new("_pm".to_string(), config.username.clone(), config.password.clone(), "pm");
         bakery.connections.push(chat);
 
 
@@ -287,7 +317,8 @@ impl Bakery{
 
     }
 
-    fn events(&mut self, chatname: &str, collection: Vec<&str>){
+    fn events(&mut self, chatname: &str, collection: Vec<String>){
+        let collection: Vec<&str> = collection.iter().map(|s| s.as_str()).collect();
         let event = &collection[0];
         let data = &collection[1..];
         self.current_chat = chatname.to_string();
@@ -322,7 +353,7 @@ impl Bakery{
         let content = data[9..].join("");
         let content = re.replace_all(&content, "");
         let content = html_escape::decode_html_entities(&content);
-        let mut message = Message{
+        let message = Message{
             user: user.to_string(),
             cid: data[4].to_string(),
             uid: data[3].to_string(),
@@ -352,7 +383,7 @@ impl Bakery{
         if message.content.to_lowercase().contains("herenti"){
             println!("{}: {}: {}", message.user, message.chat, message.content)
         }
-        if message.chat != "".to_string(){
+        if message.chat != "jewelisland".to_string(){
             if message.content.starts_with("$") {
                 let args = message.content.split(" ");
                 let args: Vec<&str> = args.collect();
@@ -383,7 +414,7 @@ impl Bakery{
                 self.chat_post(&args);
             }
             "yt" => {
-                self.chat_post(&youtube(&args));
+                self.chat_post(&youtube(&self.api_key, &args));
             }
             "rainbow" => {
                 let size = "12";
@@ -445,34 +476,37 @@ impl Bakery{
 
 fn main() {
 
-    let mut bakery = Bakery::oven("", "", vec![""]);
+
+    let mut bakery = Bakery::oven(vec![""]);
 
     breadbun(&mut bakery);
 
     fn breadbun(bakery: &mut Bakery) {
         let anpan_is_tasty = true;
         while anpan_is_tasty {
-            let mut cloned_conn = vec![];
-            for i in &mut bakery.connections{
-                cloned_conn.push((i.name.clone(), i.cumsock.try_clone().expect("failed to clone socket.")));
-            };
-            for (name, mut con) in cloned_conn {
+            let mut results = vec![];
+            for conn in &mut bakery.connections {
                 let mut buf = [0; 1024];
-                if let Ok(len) = con.read(&mut buf) {
+                if let Ok(len) = conn.cleansock.read(&mut buf) {
                     if len > 0 {
                         let data = &buf[..len];
                         for x in data.split(|b| b == &0x00) {
-                            let s = String::from_utf8_lossy(x);
-                            let s = s.trim();
-                            let s = s.split(":");
-                            let collection = s.collect::<Vec<&str>>();
-                            bakery.events(&name.clone(), collection);
+                            let s = String::from_utf8_lossy(x).trim().to_string();
+                            let mut collection = vec![];
+                            for i in s.split(":"){
+                                collection.push(i.to_string());
+                            }
+
+                            results.push((conn.name.clone(), collection));
                         }
                     }
                 }
 
             }
+            for (name, collection) in results {
+                bakery.events(&name, collection);
         }
+    }
     }
 
 
