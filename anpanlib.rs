@@ -339,7 +339,6 @@ impl Bakery{
         let event = &collection[0];
         let data = &collection[1..];
         self.current_chat = chatname.to_string();
-        //println!("event: {:?} data: {:?}", event, data);
         if *event == "b"{
             self.event_b(data);
         }
@@ -443,7 +442,7 @@ impl Bakery{
 
 
     fn on_post(&mut self, message: Message){
-        //println!("{}: {}", message.user, message.content);
+
         if message.content.to_lowercase().contains(BOT_OWNER){
             println!("{}: {}: {}", message.chat.green(), message.user.blue(), message.content)
         }
@@ -557,7 +556,6 @@ fn main() {
                         if data_accumulator.last().copied() != Some(0) {
                             data_accumulator.extend_from_slice(data);
                         } else {
-                            // Remove last byte if it's 0
                             data_accumulator.pop();
                         }
                         let data = String::from_utf8_lossy(&data_accumulator).to_string();
