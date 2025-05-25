@@ -346,6 +346,9 @@ impl Bakery{
         if *event == "inited"{
             self.event_inited(data);
         }
+        if *event == "i"{
+            self.event_i(data);
+        }
     }
 
     fn event_b(&mut self, data: &[&str]){
@@ -386,12 +389,56 @@ impl Bakery{
 
     }
 
+    fn event_i(&mut self, data: &[&str]){
+        let user = data[1];
+        let alias = data[2];
+        let user = if user == "" {
+            "None"
+        } else{
+            user
+        };
+        let user = if user == "None"{
+            if alias == ""{
+                "None"
+            } else if alias == "None"{
+                "None"
+            } else{
+                alias
+            }
+        }else
+        { user};
+        let re = Regex::new(r"<.*?>").unwrap();
+        let content = data[9..].join("");
+        let content = re.replace_all(&content, "");
+        let content = html_escape::decode_html_entities(&content);
+        let message = Message{
+            user: user.to_string(),
+            cid: data[4].to_string(),
+            uid: data[3].to_string(),
+            time: data[0].to_string(),
+            sid: data[5].to_string(),
+            ip: data[6].to_string(),
+            content: content.to_string(),
+            chat: self.current_chat.clone(),
+        };
+
+        self.on_hist(message);
+
+
+    }
+
     fn event_inited(&mut self, data: &[&str]){
         self.chat_send(vec!["getpremium", "1"]);
         self.chat_send(vec!["g_participants", "start"]);
         self.chat_send(vec!["getbannedwords"]);
         self.chat_send(vec!["msgbg", "1"]);
         println!("logged into: {}", &self.current_chat);
+    }
+
+    fn on_hist(&mut self, message: Message){
+        if message.content.to_lowercase().contains(BOT_OWNER){
+            println!("{}: {}: {}", message.chat.green(), message.user.blue(), message.content)
+        }
     }
 
 
@@ -502,15 +549,28 @@ fn main() {
         while anpan_is_tasty {
             let mut results = vec![];
             for conn in &mut bakery.connections {
-                let mut buf = [0; 1024];
+                let mut buf = [0; 8192];
                 if let Ok(len) = conn.cumsock.read(&mut buf) {
                     if len > 0 {
                         let data = &buf[..len];
-                        for x in data.split(|b| b == &0x00) {
-                            let s = String::from_utf8_lossy(x).trim().to_string();
-                            let collection = s.split(":").map(|x| x.to_string()).collect();
-                            results.push((conn.name.clone(), collection));
+                        let mut data_accumulator = Vec::new();
+                        if data_accumulator.last().copied() != Some(0) {
+                            data_accumulator.extend_from_slice(data);
+                        } else {
+                            // Remove last byte if it's 0
+                            data_accumulator.pop();
                         }
+                        let data = String::from_utf8_lossy(&data_accumulator).to_string();
+                        let data = data.split("\x00");
+                        let data: Vec<String> = data.map(|x| x.trim().to_string()).collect();
+                        for i in data{
+                            let i  = i.split(":").map(|x| x.to_string()).collect();
+
+                            results.push((conn.name.clone(), i));
+                        }
+
+
+
                     }
                 }
 
