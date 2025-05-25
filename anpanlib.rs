@@ -552,13 +552,7 @@ fn main() {
                 if let Ok(len) = conn.cumsock.read(&mut buf) {
                     if len > 0 {
                         let data = &buf[..len];
-                        let mut data_accumulator = Vec::new();
-                        if data_accumulator.last().copied() != Some(0) {
-                            data_accumulator.extend_from_slice(data);
-                        } else {
-                            data_accumulator.pop();
-                        }
-                        let data = String::from_utf8_lossy(&data_accumulator).to_string();
+                        let data = String::from_utf8_lossy(&data).to_string();
                         let data = data.split("\x00");
                         let data: Vec<String> = data.map(|x| x.trim().to_string()).collect();
                         for i in data{
