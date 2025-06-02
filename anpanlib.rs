@@ -17,6 +17,10 @@ use reqwest::header::HeaderValue;
 use html_escape;
 mod rainbow;
 use rainbow::Rainbow; //found in my extra-stuff repository. i do not own this code.
+mod fart; //found in my miscellaneous repository.
+use fart::Fart;
+mod tran; //found in my miscellaneous repository.
+use tran::Tran;
 use serde_json;
 use colored::Colorize;
 
@@ -477,6 +481,13 @@ impl Bakery{
             "yt" => {
                 self.chat_post(&youtube(&self.api_key, &args));
             }
+
+            "tran" => {
+                let args = args.split(" ");
+                let args: Vec<&str> = args.map(|x| x).collect();
+                self.chat_post(&Tran::tran("auto", &args[0], &args[1..].join(" ")));
+            }
+
             "rainbow" => {
                 let size = "12";
                 let rainbowed = Rainbow::rainbow_text(&args, size);
@@ -522,6 +533,9 @@ impl Bakery{
                 } else {
                     self.chat_post("You do not have permission to use this command.");
                 }
+            }
+            "fart" => {
+                self.chat_post(&Fart::fart());
             }
 
             _ => {
