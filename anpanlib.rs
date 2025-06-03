@@ -139,6 +139,7 @@ impl Config{
     }
 }
 
+#[derive(Clone)]
 struct Message{
     user: String,
     cid: String,
@@ -254,6 +255,7 @@ struct Bakery{
     room_list: Vec<String>,
     mods: Vec<String>,
     locked_rooms: Vec<String>,
+    history: Vec<Message>,
 
 }
 
@@ -274,6 +276,7 @@ impl Bakery{
             room_list: config.room_list,
             mods: config.mods,
             locked_rooms: config.locked_rooms,
+            history: vec![],
         };
         for i in &mut bakery.room_list{
             let chat = Chat::new(i.to_string(), config.username.clone(), config.password.clone(), "chat");
@@ -338,6 +341,16 @@ impl Bakery{
 
     }
 
+    fn get_last_message(&mut self, user: &str) -> Option<Message> {
+        self.history.sort_by_key(|x| x.time.clone());
+        self.history
+        .iter()
+        .rev()
+        .find(|msg| msg.user.to_lowercase() == user.to_lowercase())
+        .cloned()
+    }
+
+
     fn events(&mut self, chatname: &str, collection: Vec<String>){
         let collection: Vec<&str> = collection.iter().map(|x| x.as_str()).collect();
         let event = &collection[0];
@@ -386,7 +399,7 @@ impl Bakery{
             content: content.to_string(),
             chat: self.current_chat.clone(),
         };
-
+        self.history.push(message.clone());
         self.on_post(message);
 
 
@@ -425,6 +438,7 @@ impl Bakery{
             chat: self.current_chat.clone(),
         };
 
+        self.history.push(message.clone());
         self.on_hist(message);
 
 
@@ -480,6 +494,17 @@ impl Bakery{
             }
             "yt" => {
                 self.chat_post(&youtube(&self.api_key, &args));
+            }
+
+            "seen" => {
+                let message = self.get_last_message(&args);
+                if message.is_some() {
+                    let message = message.unwrap();
+                    self.chat_post(&format!("{}: {}: {}: {}", message.user, message.chat, message.time, message.content));
+                } else {
+                    self.chat_post("Could not find any messages by that account.");
+                }
+
             }
 
             "tran" => {
@@ -584,6 +609,7 @@ fn main() {
             for (name, collection) in results {
                 bakery.events(&name, collection);
         }
+        thread::sleep(Duration::from_millis(10));
     }
     }
 
