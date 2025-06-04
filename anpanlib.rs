@@ -4,13 +4,14 @@
  * I am a newbie coder to rust, so the code may be sloppy. If someone wants to add suggestions for the code structure, contact me on discord @herenti.
  */
 
-
 use std::net::TcpStream;
 use std::io::prelude::*;
 use rand::Rng;
 use std::thread;
 use std::time::Duration;
+use chrono::prelude::*;
 use regex::Regex;
+use std::io::ErrorKind;
 use std::collections::HashMap;
 use reqwest::header::USER_AGENT;
 use reqwest::header::HeaderValue;
@@ -23,7 +24,6 @@ mod tran; //found in my miscellaneous repository.
 use tran::Tran;
 use serde_json;
 use colored::Colorize;
-
 
 const BOT_OWNER: &str = "herenti";
 
@@ -500,7 +500,10 @@ impl Bakery{
                 let message = self.get_last_message(&args);
                 if message.is_some() {
                     let message = message.unwrap();
-                    self.chat_post(&format!("{}: {}: {}: {}", message.user, message.chat, message.time, message.content));
+                    let timestamp = &message.time;
+                    let timestamp: f64 = timestamp.parse().unwrap();
+                    let date_time = Local.timestamp_opt(timestamp as i64, 0).unwrap();
+                    self.chat_post(&format!("<b>User</b>: {} -- <b>Chat</b>: {} -- <b>Time</b>: {} -- <b>Message</b>: {}", message.user, message.chat, date_time, message.content));
                 } else {
                     self.chat_post("Could not find any messages by that account.");
                 }
@@ -587,28 +590,49 @@ fn main() {
         while anpan_is_tasty {
             let mut results = vec![];
             for conn in &mut bakery.connections {
-                let mut buf = [0; 8192];
-                if let Ok(len) = conn.cumsock.read(&mut buf) {
-                    if len > 0 {
-                        let data = &buf[..len];
-                        let data = String::from_utf8_lossy(&data).to_string();
-                        let data = data.split("\x00");
-                        let data: Vec<String> = data.map(|x| x.trim().to_string()).collect();
-                        for i in data{
-                            let i  = i.split(":").map(|x| x.to_string()).collect();
-
-                            results.push((conn.name.clone(), i));
+                let mut buf = [0; 1024];
+                loop{
+                    match conn.cumsock.read(&mut buf) {
+                        Ok(len) if len > 0 => {
+                            conn.wbyte.push_str(&String::from_utf8_lossy(&buf[..len]));
+                            if conn.wbyte.ends_with("\x00") {
+                                break;
+                            }
                         }
-
-
-
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                            break;
+                        }
+                        Err(e) => {
+                            eprintln!("Read error: {}", e);
+                            break;
+                        }
                     }
+
                 }
+                if !conn.wbyte.is_empty(){
+                    let data = conn.wbyte.split("\x00");
+                    let data: Vec<String> = data.map(|x| x.trim().to_string()).collect();
+                    for i in data{
+                        let i  = i.split(":").map(|x| x.to_string()).collect();
+                        results.push((conn.name.clone(), i));
+                    }
+                    conn.wbyte = "".to_string();
+                }
+
+
+
+
+
+
 
             }
             for (name, collection) in results {
                 bakery.events(&name, collection);
         }
+
         thread::sleep(Duration::from_millis(10));
     }
     }
