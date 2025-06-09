@@ -24,6 +24,8 @@ mod tran; //found in my miscellaneous repository.
 use tran::Tran;
 use serde_json;
 use colored::Colorize;
+mod danbooru; //found in my miscellaneous repository.
+use danbooru::Danbooru;
 
 const BOT_OWNER: &str = "herenti";
 
@@ -115,27 +117,41 @@ struct Config {
 
 impl Config{
     fn new () -> Self {
-        let contents = std::fs::read_to_string("utils.txt").unwrap();
-        let contents = contents.trim().split(":");
-        let contents = contents.collect::<Vec<&str>>();
-        if contents.len() < 6 {
-            println!("\r\n{} You must have a utils.txt for the bot with the following format\r\n{}\r\nThe moduser and lockedrooms can be left empty as long as there is a : to mark where they should be.\r\nPut the utils.txt in the same directory as the cargo.toml or the executable file.", "[ERROR READ ME]".red().bold(), "username:password:youtubeapikey:room1 room2 room3:moduser1 moduser2 moduser3:lockedroom1 lockedroom2 lockedroom3".green())
+        if let Ok(contents) = std::fs::read_to_string("utils.txt"){;
+            let contents = contents.trim().split(":");
+            let contents = contents.collect::<Vec<&str>>();
+            if contents.len() < 6 {
+                println!("\r\n{} You must have a utils.txt for the bot with the following format\r\n{}\r\nThe moduser and lockedrooms can be left empty as long as there is a : to mark where they should be.\r\nPut the utils.txt in the same directory as the cargo.toml or the executable file.", "[ERROR READ ME]".red().bold(), "username:password:youtubeapikey:room1 room2 room3:moduser1 moduser2 moduser3:lockedroom1 lockedroom2 lockedroom3".green());
+            }
+            let username = contents[0];
+            let password = contents[1];
+            let api_key = contents[2];
+            let room_list = contents[3].split(" ").map(|x| x.to_string()).collect();
+            let mods = contents[4].split(" ").map(|x| x.to_string()).collect();
+            let locked_rooms = contents[5].split(" ").map(|x| x.to_string()).collect();
+            let config = Config {
+                username: username.to_string(),
+                password: password.to_string(),
+                api_key: api_key.to_string(),
+                room_list: room_list,
+                mods: mods,
+                locked_rooms: locked_rooms,
+            };
+            config
         }
-        let username = contents[0];
-        let password = contents[1];
-        let api_key = contents[2];
-        let room_list = contents[3].split(" ").map(|x| x.to_string()).collect();
-        let mods = contents[4].split(" ").map(|x| x.to_string()).collect();
-        let locked_rooms = contents[5].split(" ").map(|x| x.to_string()).collect();
-        let config = Config {
-            username: username.to_string(),
-            password: password.to_string(),
-            api_key: api_key.to_string(),
-            room_list: room_list,
-            mods: mods,
-            locked_rooms: locked_rooms,
-        };
-        config
+        else{
+            println!("\r\n{} You must have a utils.txt for the bot with the following format\r\n{}\r\nThe moduser and lockedrooms can be left empty as long as there is a : to mark where they should be.\r\nPut the utils.txt in the same directory as the cargo.toml or the executable file.", "[ERROR READ ME]".red().bold(), "username:password:youtubeapikey:room1 room2 room3:moduser1 moduser2 moduser3:lockedroom1 lockedroom2 lockedroom3".green());
+            let config = Config {
+                username: "".to_string(),
+                password: "".to_string(),
+                api_key: "".to_string(),
+                room_list: vec![],
+                mods: vec![],
+                locked_rooms: vec![],
+            };
+            config
+
+            }
     }
 }
 
@@ -269,8 +285,8 @@ impl Bakery{
             to_send_room: "None".to_string(),
             username: config.username.clone(),
             password: config.password.clone(),
-            name_color: "C7A793".to_string(),
-            font_color: "F7DCCE".to_string(),
+            name_color: "FFD974".to_string(),
+            font_color: "FEFFFF".to_string(),
             font_size: 10,
             api_key: config.api_key,
             room_list: config.room_list,
@@ -495,6 +511,22 @@ impl Bakery{
             "yt" => {
                 self.chat_post(&youtube(&self.api_key, &args));
             }
+            "pfp" => {
+                if args.len() > 0{
+                    let args: Vec<&str> = args.split("").filter(|s| !s.is_empty()).collect();
+                    let url = if args.len() > 1 {
+                        format!("https://st.chatango.com/profileimg/{}/{}/{}/full.jpg", &args[0], &args[1], &args.join(""))
+                    }else{
+                        format!("https://st.chatango.com/profileimg/{}/{}/{}/full.jpg", &args[0], &args[0], &args.join(""))
+                    };
+
+                    self.chat_post(&url);
+                }
+                else{
+                    self.chat_post("No.");
+                }
+
+            }
 
             "seen" => {
                 let message = self.get_last_message(&args);
@@ -564,6 +596,14 @@ impl Bakery{
             }
             "fart" => {
                 self.chat_post(&Fart::fart());
+            }
+            "danbooru" => {
+
+                self.chat_post(&Danbooru::danbooru(&args));
+            }
+
+            "help" => {
+                self.chat_post("Current commands: [fart, danbooru, rsend, join, rainbow, send, tran, seen, say, yt, help, pfp]");
             }
 
             _ => {
